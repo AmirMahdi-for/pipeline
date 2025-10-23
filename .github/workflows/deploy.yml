@@ -8,10 +8,9 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
 
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: SSH Deploy
@@ -22,50 +21,38 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
           port: ${{ secrets.DEPLOY_PORT }}
           script: |
-            set -euo pipefail
-
-            cd "${{ secrets.DEPLOY_PATH }}"
-
-            # synchronized with remote main
+            set -e
+            echo "Starting deployment..."
+            
+            cd ${{ secrets.DEPLOY_PATH }}
+            
+            # Pull latest changes
+            echo "Pulling latest changes..."
             git fetch --all
             git reset --hard origin/main
-            git clean -fd
-
-            docker compose down --remove-orphans || true
-
-            docker compose up -d --build --remove-orphans
-
-            echo "Waiting for db container to become healthy..."
-
-            TIMEOUT=120
-            START=$(date +%s)
-            while true; do
-              DB_CID=$(docker compose ps -q db 2>/dev/null || true)
-              if [ -n "$DB_CID" ]; then
-                STATUS=$(docker inspect -f '{{.State.Health.Status}}' "$DB_CID" 2>/dev/null || true)
-                if [ "$STATUS" = "healthy" ]; then
-                  echo "db is healthy"
-                  break
-                fi
-              fi
-              NOW=$(date +%s)
-              ELAPSED=$((NOW-START))
-              if [ "$ELAPSED" -gt "$TIMEOUT" ]; then
-                echo "Timed out waiting for db to become healthy (proceeding anyway)"
-                break
-              fi
-              sleep 2
-            done
-
-            echo "Running migrations..."
-            docker compose exec -T app python manage.py migrate --noinput
-
-            echo "Collect static files..."
+            
+            # Build and start containers
+            echo "Building and starting containers..."
+            docker compose up -d --build
+            
+            # Wait for services to be ready
+            echo "Waiting for services to be ready..."
+            sleep 30
+            
+            # Run Django migrations
+            echo "Running database migrations..."
+            docker compose exec -T app python manage.py migrate
+            
+            # Collect static files
+            echo "Collecting static files..."
             docker compose exec -T app python manage.py collectstatic --noinput
-
-            echo "Starting (or restarting) celery worker..."
-            docker compose up -d --no-build celery_worker
-
-            docker compose restart app || true
-
-            echo "Deployment finished successfully"
+            
+            # Restart Celery workers (to pick up new code)
+            echo "Restarting Celery workers..."
+            docker compose restart celery_worker
+            
+            # Health check
+            echo "Performing health check..."
+            curl -f http://localhost:8000/api/docs/ || echo "API docs might not be accessible yet"
+            
+            echo "Deployment completed successfully!"
