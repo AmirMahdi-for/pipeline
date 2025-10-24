@@ -13,13 +13,13 @@ def process_file_task(self, document_id):
     try:
         logger.info(f" Starting processing for document {document_id}")
 
-        document = Document.objects.select_for_update().get(id=document_id)
+        document = Document.objects.get(id=document_id)
         document.status = 'processing'
         document.save()
         logger.info(f" Document {document_id} status set to processing")
 
         client = get_minio_client()
-        bucket = os.environ.get('MINIO_BUCKET', 'assistant')
+        bucket = os.environ.get('MINIO_BUCKET')
 
         try:
             logger.info(f" Downloading {document.original_filename} from MinIO")
