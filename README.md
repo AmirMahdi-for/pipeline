@@ -18,8 +18,14 @@ cd pipeline
 cp .env.example .env
 # Edit .env with your values
 
-# 3. Build and start services
+# 3 Run the Project
+# You can run the project with or without MinIO depending on your setup:
+
+# Option 1 — Run without MinIO
 docker-compose up -d --build
+
+#Option 2 — Run with MinIO
+docker compose --profile minio up -d --build
 
 # 4. Run migrations
 docker-compose exec app python manage.py migrate
